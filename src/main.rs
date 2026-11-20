@@ -1,15 +1,5 @@
 //! List targets, variables, and where they are defined, from a GNU make database.
-//!
-//! Usage: make -pRrq [-f FILE] 2>/dev/null | mkdb [-a]
-//!        mkdb [-a] DUMP...
-//!
-//! Lists phony targets and variables; -a also lists file targets and pattern rules.
-//!
-//! Output columns are kind, name, and location. Location is FILE:LINE when make
-//! records it, otherwise the variable's origin in angle brackets, or "-" for a
-//! target without a recipe (make does not record where such a rule appears).
-//! Target- and pattern-specific variables are named SCOPE:VAR. Paths under the
-//! directory make ran in (CURDIR) are shown relative to it.
+//! See README.md for usage and output format.
 
 use std::io::{self, BufWriter, Read, Write};
 
