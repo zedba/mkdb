@@ -1,7 +1,22 @@
 //! List targets, variables, and where they are defined, from a GNU make database.
 //! See README.md for usage and output format.
 
+use clap::Parser;
 use std::io::{self, BufWriter, Read, Write};
+use std::path::PathBuf;
+
+/// List targets, variables, and where they are defined, from a GNU make database.
+///
+/// Reads the output of `make -pRrq` from DUMP files, or from stdin if none are
+/// given. By default, lists phony targets and variables.
+#[derive(Parser)]
+struct Args {
+    /// Also list file targets and pattern rules
+    #[arg(short = 'a')]
+    all: bool,
+    /// Make database dumps to read
+    dump: Vec<PathBuf>,
+}
 
 const ORIGINS: &[&str] = &[
     "default",
@@ -68,15 +83,12 @@ fn varname(text: &str) -> &str {
 }
 
 fn main() -> io::Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let show_all = args.iter().any(|a| a == "-a");
-    let files: Vec<&String> = args.iter().filter(|a| *a != "-a").collect();
-
+    let args = Args::parse();
     let mut input = Vec::new();
-    if files.is_empty() {
+    if args.dump.is_empty() {
         io::stdin().read_to_end(&mut input)?;
     }
-    for f in files {
+    for f in &args.dump {
         input.extend(std::fs::read(f)?);
     }
     let input = String::from_utf8_lossy(&input);
@@ -148,7 +160,7 @@ fn main() -> io::Result<()> {
     let strip = |s: &str| s.strip_prefix(curdir.as_str()).unwrap_or(s).to_string();
     let mut rows: Vec<_> = rows
         .into_iter()
-        .filter(|(k, _, _)| show_all || !matches!(*k, "target" | "pattern"))
+        .filter(|(k, _, _)| args.all || !matches!(*k, "target" | "pattern"))
         .map(|(k, n, loc)| (k, strip(&n), strip(&loc)))
         .collect();
     rows.sort();

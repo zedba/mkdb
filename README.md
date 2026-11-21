@@ -14,11 +14,12 @@ cargo build --release   # binary at target/release/mkdb
 
 ```sh
 make -pRrq [-f FILE] 2>/dev/null | mkdb [-a]
-mkdb [-a] DUMP...
+mkdb [-a] [--] DUMP...
 ```
 
 By default `mkdb` lists phony targets and variables. `-a` also lists file
-targets and pattern rules.
+targets and pattern rules. `--` ends options, for a DUMP whose name starts with
+`-`. `-h` prints a summary; `--help` prints more detail.
 
 ## Output
 
