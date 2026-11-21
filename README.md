@@ -16,6 +16,7 @@ cargo build --release   # binary at target/release/mkdb
 mkdb [-vptfa]
 make -pRrq [MAKE-ARGS] 2>/dev/null | mkdb [-vptfa]
 mkdb [-vptfa] < DUMP
+mkdb --tree=TARGET [< DUMP]
 ```
 
 When stdin is a terminal, `mkdb` runs `${MAKE:-make} -pRrq` in the current
@@ -26,8 +27,9 @@ reads the makefiles, which has side effects (see [Limitations](#limitations)).
 
 Flags select which kinds of rows to show (see [Output](#output)); `-a` shows
 all of them. With none of `-v`, `-p`, `-t`, or `-f`, `mkdb` shows variables and
-phony targets, as if given `-vp`. `-h` prints a summary; `--help` prints more
-detail.
+phony targets, as if given `-vp`. `--tree` prints a dependency tree instead
+(see [Dependency tree](#dependency-tree)). `-h` prints a summary; `--help`
+prints more detail.
 
 ## Output
 
@@ -73,6 +75,50 @@ variable's origin in angle brackets (`<environment>`, `<default>`,
 `<automatic>`, `<command line>`, `<makefile>`, `<override>`), or `-` for a
 target without a recipe. Paths under the directory make ran in (`CURDIR`) are
 shown relative to it.
+
+## Dependency tree
+
+`--tree=TARGET` prints TARGET's prerequisites recursively, drawn like `tree`.
+TARGET may be given relative to `CURDIR`. Given this Makefile:
+
+```make
+.PHONY: all
+all: prog docs
+prog: main.o util.o | outdir
+	cc -o $@ $^
+main.o: main.c common.h
+util.o: util.c common.h
+%.o: %.c
+	cc -c $<
+outdir:
+	mkdir -p $@
+docs:: README
+	echo a
+docs:: prog
+	echo b
+```
+
+`mkdb` prints:
+
+```
+$ mkdb --tree=all
+all
+├── prog
+│   ├── main.o
+│   │   ├── main.c
+│   │   └── common.h
+│   ├── util.o
+│   │   ├── util.c
+│   │   └── common.h
+│   └── outdir
+└── docs
+    ├── README
+    └── prog (*)
+```
+
+Prerequisites appear in make's order, including order-only ones (`outdir`) and
+those of every double-colon rule (`docs`). A target whose prerequisites were
+already shown is marked `(*)` and not expanded again; this also cuts cycles.
 
 ## Limitations
 

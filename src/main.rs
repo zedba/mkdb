@@ -2,6 +2,7 @@
 //! See README.md for usage and output format.
 
 use clap::Parser;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, BufWriter, IsTerminal, Read, Write};
 use std::process::{Command, Stdio, exit};
 
@@ -27,6 +28,45 @@ struct Args {
     /// Show everything; same as -vptf
     #[arg(short = 'a')]
     all: bool,
+    /// Print TARGET's prerequisites as a tree instead of listing
+    #[arg(long, value_name = "TARGET")]
+    tree: Option<String>,
+}
+
+type Deps<'a> = HashMap<&'a str, Vec<&'a str>>;
+
+/// Strips the CURDIR prefix so paths under it read as relative.
+fn rel<'a>(s: &'a str, curdir: &str) -> &'a str {
+    s.strip_prefix(curdir).unwrap_or(s)
+}
+
+/// Prints the prerequisites of `node`, one level deeper than `prefix`. A target
+/// whose prerequisites were already printed is marked (*) and not expanded
+/// again, which also stops cycles.
+fn print_tree<'a>(
+    out: &mut impl Write,
+    deps: &Deps<'a>,
+    node: &str,
+    prefix: &str,
+    seen: &mut HashSet<&'a str>,
+    curdir: &str,
+) -> io::Result<()> {
+    let kids = deps.get(node).map_or(&[][..], Vec::as_slice);
+    for (i, &kid) in kids.iter().enumerate() {
+        let last = i + 1 == kids.len();
+        let repeat = deps.get(kid).is_some_and(|v| !v.is_empty()) && !seen.insert(kid);
+        let (branch, indent) = if last {
+            ("└── ", "    ")
+        } else {
+            ("├── ", "│   ")
+        };
+        let mark = if repeat { " (*)" } else { "" };
+        writeln!(out, "{prefix}{branch}{}{mark}", rel(kid, curdir))?;
+        if !repeat {
+            print_tree(out, deps, kid, &format!("{prefix}{indent}"), seen, curdir)?;
+        }
+    }
+    Ok(())
 }
 
 const ORIGINS: &[&str] = &[
@@ -120,6 +160,7 @@ fn main() -> io::Result<()> {
     let input = String::from_utf8_lossy(&input);
 
     let mut rows: Vec<(&str, String, String)> = Vec::new();
+    let mut deps = Deps::new(); // prerequisites of each target, in order
     let mut section = None; // current section kind, or None outside them
     let mut origin_loc: Option<String> = None; // origin comment on the previous line
     let mut scope = ""; // pattern of the current pattern-specific block
@@ -178,12 +219,38 @@ fn main() -> io::Result<()> {
             let (name, rest) = line.split_once(':').unwrap_or((line, ""));
             match prev {
                 Some(loc) => rows.push(("variable", format!("{name}:{}", varname(rest)), loc)),
-                None => target = Some(name),
+                None => {
+                    target = Some(name);
+                    // Double-colon rules add entries; implicit search can repeat names.
+                    let v = deps.entry(name).or_default();
+                    for p in rest.trim_start_matches(':').split_whitespace() {
+                        if p != "|" && !v.contains(&p) {
+                            v.push(p);
+                        }
+                    }
+                }
             }
         }
     }
 
-    let strip = |s: &str| s.strip_prefix(curdir.as_str()).unwrap_or(s).to_string();
+    let mut out = BufWriter::new(io::stdout().lock());
+    if let Some(t) = &args.tree {
+        let abs = format!("{curdir}{t}");
+        let Some(root) = [t.as_str(), &abs]
+            .into_iter()
+            .find_map(|n| deps.get_key_value(n).map(|(k, _)| *k))
+        else {
+            eprintln!("mkdb: no such target: {t}");
+            exit(1)
+        };
+        let mut seen = HashSet::from([root]);
+        let _ = writeln!(out, "{}", rel(root, &curdir))
+            .and_then(|_| print_tree(&mut out, &deps, root, "", &mut seen, &curdir))
+            .and_then(|_| out.flush());
+        return Ok(());
+    }
+
+    let strip = |s: &str| rel(s, &curdir).to_string();
     let mut rows: Vec<_> = rows
         .into_iter()
         .filter(|(k, _, _)| match *k {
@@ -197,7 +264,6 @@ fn main() -> io::Result<()> {
     rows.sort();
     let w0 = rows.iter().map(|r| r.0.chars().count()).max().unwrap_or(0);
     let w1 = rows.iter().map(|r| r.1.chars().count()).max().unwrap_or(0);
-    let mut out = BufWriter::new(io::stdout().lock());
     for (kind, name, loc) in rows {
         // A closed pipe (e.g. `| head`) is a normal way to stop.
         if writeln!(out, "{kind:<w0$}  {name:<w1$}  {loc}").is_err() {
