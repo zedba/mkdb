@@ -2,13 +2,14 @@
 //! See README.md for usage and output format.
 
 use clap::Parser;
-use std::io::{self, BufWriter, Read, Write};
-use std::path::PathBuf;
+use std::io::{self, BufWriter, IsTerminal, Read, Write};
+use std::process::{Command, Stdio, exit};
 
 /// List targets, variables, and where they are defined, from a GNU make database.
 ///
-/// Reads the output of `make -pRrq` from DUMP files, or from stdin if none are
-/// given. With none of -v, -p, -t, or -f, shows variables and phony targets.
+/// Reads the output of `make -pRrq` from stdin. If stdin is a terminal, runs
+/// `${MAKE:-make} -pRrq` in the current directory instead. With none of -v, -p,
+/// -t, or -f, shows variables and phony targets.
 #[derive(Parser)]
 struct Args {
     /// Show variables
@@ -26,8 +27,6 @@ struct Args {
     /// Show everything; same as -vptf
     #[arg(short = 'a')]
     all: bool,
-    /// Make database dumps to read
-    dump: Vec<PathBuf>,
 }
 
 const ORIGINS: &[&str] = &[
@@ -101,11 +100,21 @@ fn main() -> io::Result<()> {
     }
     let default = !(args.variables || args.phony || args.patterns || args.files);
     let mut input = Vec::new();
-    if args.dump.is_empty() {
+    if io::stdin().is_terminal() {
+        // Make's exit status says nothing about whether the database is usable,
+        // so it is ignored; its stderr is passed through instead.
+        let make = std::env::var_os("MAKE").unwrap_or("make".into());
+        input = Command::new(&make)
+            .arg("-pRrq")
+            .stderr(Stdio::inherit())
+            .output()
+            .unwrap_or_else(|e| {
+                eprintln!("mkdb: {}: {e}", make.display());
+                exit(1)
+            })
+            .stdout;
+    } else {
         io::stdin().read_to_end(&mut input)?;
-    }
-    for f in &args.dump {
-        input.extend(std::fs::read(f)?);
     }
     let input = String::from_utf8_lossy(&input);
 

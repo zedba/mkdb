@@ -13,14 +13,21 @@ cargo build --release   # binary at target/release/mkdb
 ## Usage
 
 ```sh
-make -pRrq [-f FILE] 2>/dev/null | mkdb [-vptfa]
-mkdb [-vptfa] [--] DUMP...
+mkdb [-vptfa]
+make -pRrq [MAKE-ARGS] 2>/dev/null | mkdb [-vptfa]
+mkdb [-vptfa] < DUMP
 ```
+
+When stdin is a terminal, `mkdb` runs `${MAKE:-make} -pRrq` in the current
+directory, passing make's stderr through. Otherwise it reads a database from
+stdin. Pipe one in to pass make arguments such as `-C DIR`, `-f FILE`, or
+`VAR=value`, or when stdin is not a terminal (scripts, CI). Either way, make
+reads the makefiles, which has side effects (see [Limitations](#limitations)).
 
 Flags select which kinds of rows to show (see [Output](#output)); `-a` shows
 all of them. With none of `-v`, `-p`, `-t`, or `-f`, `mkdb` shows variables and
-phony targets, as if given `-vp`. `--` ends options, for a DUMP whose name
-starts with `-`. `-h` prints a summary; `--help` prints more detail.
+phony targets, as if given `-vp`. `-h` prints a summary; `--help` prints more
+detail.
 
 ## Output
 
@@ -69,6 +76,10 @@ shown relative to it.
 
 ## Limitations
 
+- Reading the makefiles is not side-effect free. `-q` keeps make from building
+  targets, but make still remakes out-of-date included makefiles (running their
+  recipes), and any `$(shell ...)` expanded during parsing (e.g. in a `:=`
+  assignment) runs.
 - A target's location is that of its recipe. Make does not record where a rule
   without a recipe appears, so such targets show `-`.
 - If make stops on a makefile parse error (`*** ... Stop.` on stderr), the
