@@ -13,13 +13,14 @@ cargo build --release   # binary at target/release/mkdb
 ## Usage
 
 ```sh
-make -pRrq [-f FILE] 2>/dev/null | mkdb [-a]
-mkdb [-a] [--] DUMP...
+make -pRrq [-f FILE] 2>/dev/null | mkdb [-vptfa]
+mkdb [-vptfa] [--] DUMP...
 ```
 
-By default `mkdb` lists phony targets and variables. `-a` also lists file
-targets and pattern rules. `--` ends options, for a DUMP whose name starts with
-`-`. `-h` prints a summary; `--help` prints more detail.
+Flags select which kinds of rows to show (see [Output](#output)); `-a` shows
+all of them. With none of `-v`, `-p`, `-t`, or `-f`, `mkdb` shows variables and
+phony targets, as if given `-vp`. `--` ends options, for a DUMP whose name
+starts with `-`. `-h` prints a summary; `--help` prints more detail.
 
 ## Output
 
@@ -53,12 +54,12 @@ variable  MAKEFILE_LIST  Makefile:1
 variable  prog:CFLAGS    Makefile:4
 ```
 
-| Kind       | Meaning                                              |
-|------------|------------------------------------------------------|
-| `phony`    | Target listed as a prerequisite of `.PHONY`          |
-| `target`   | Any other target (`-a` only)                         |
-| `pattern`  | Pattern rule, e.g. `%.o: %.c` (`-a` only)            |
-| `variable` | Variable; `SCOPE:VAR` if target- or pattern-specific |
+| Kind       | Flag | Meaning                                              |
+|------------|------|------------------------------------------------------|
+| `variable` | `-v` | Variable; `SCOPE:VAR` if target- or pattern-specific |
+| `phony`    | `-p` | Target listed as a prerequisite of `.PHONY`          |
+| `pattern`  | `-t` | Pattern rule, e.g. `%.o: %.c`                        |
+| `target`   | `-f` | Any other target (a file target)                     |
 
 The location is `FILE:LINE` when make records it. Otherwise it is the
 variable's origin in angle brackets (`<environment>`, `<default>`,

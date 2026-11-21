@@ -8,10 +8,22 @@ use std::path::PathBuf;
 /// List targets, variables, and where they are defined, from a GNU make database.
 ///
 /// Reads the output of `make -pRrq` from DUMP files, or from stdin if none are
-/// given. By default, lists phony targets and variables.
+/// given. With none of -v, -p, -t, or -f, shows variables and phony targets.
 #[derive(Parser)]
 struct Args {
-    /// Also list file targets and pattern rules
+    /// Show variables
+    #[arg(short = 'v')]
+    variables: bool,
+    /// Show phony targets
+    #[arg(short = 'p')]
+    phony: bool,
+    /// Show pattern rules
+    #[arg(short = 't')]
+    patterns: bool,
+    /// Show file targets
+    #[arg(short = 'f')]
+    files: bool,
+    /// Show everything; same as -vptf
     #[arg(short = 'a')]
     all: bool,
     /// Make database dumps to read
@@ -83,7 +95,11 @@ fn varname(text: &str) -> &str {
 }
 
 fn main() -> io::Result<()> {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    if args.all {
+        (args.variables, args.phony, args.patterns, args.files) = (true, true, true, true);
+    }
+    let default = !(args.variables || args.phony || args.patterns || args.files);
     let mut input = Vec::new();
     if args.dump.is_empty() {
         io::stdin().read_to_end(&mut input)?;
@@ -160,7 +176,12 @@ fn main() -> io::Result<()> {
     let strip = |s: &str| s.strip_prefix(curdir.as_str()).unwrap_or(s).to_string();
     let mut rows: Vec<_> = rows
         .into_iter()
-        .filter(|(k, _, _)| args.all || !matches!(*k, "target" | "pattern"))
+        .filter(|(k, _, _)| match *k {
+            "variable" => args.variables || default,
+            "phony" => args.phony || default,
+            "pattern" => args.patterns,
+            _ => args.files,
+        })
         .map(|(k, n, loc)| (k, strip(&n), strip(&loc)))
         .collect();
     rows.sort();
