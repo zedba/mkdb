@@ -16,7 +16,7 @@ cargo build --release   # binary at target/release/mkdb
 mkdb [-vsptfa]
 make -pRrq [MAKE-ARGS] 2>/dev/null | mkdb [-vsptfa]
 mkdb [-vsptfa] < DUMP
-mkdb --tree=TARGET [< DUMP]
+mkdb [-pfa] --tree=TARGET [< DUMP]
 ```
 
 When stdin is a terminal, `mkdb` runs `${MAKE:-make} -pRrq` in the current
@@ -27,9 +27,9 @@ reads the makefiles, which has side effects (see [Limitations](#limitations)).
 
 Flags select which kinds of rows to show (see [Output](#output)); `-a` shows
 all of them. With none of `-v`, `-s`, `-p`, `-t`, or `-f`, `mkdb` shows global
-variables and phony targets, as if given `-vp`. `--tree` prints a dependency tree instead
-(see [Dependency tree](#dependency-tree)). `-h` prints a summary; `--help`
-prints more detail.
+variables and phony targets, as if given `-vp`. `--tree` prints a dependency
+tree instead (see [Dependency tree](#dependency-tree)). `-h` prints a summary;
+`--help` prints more detail.
 
 ## Output
 
@@ -102,7 +102,7 @@ docs:: prog
 `mkdb` prints:
 
 ```
-$ mkdb --tree=all
+$ mkdb -a --tree=all
 all
 ├── prog
 │   ├── main.o
@@ -120,6 +120,13 @@ all
 Prerequisites appear in make's order, including order-only ones (`outdir`) and
 those of every double-colon rule (`docs`). A target whose prerequisites were
 already shown is marked `(*)` and not expanded again; this also cuts cycles.
+
+The kind flags filter the tree: `-p` shows phony prerequisites and `-f` shows
+files, whether or not they have a rule. `-v`, `-s`, and `-t` have no effect,
+since variables and pattern rules are not prerequisites. A hidden prerequisite
+hides everything below it; TARGET itself is always shown. So by default (`-vp`)
+the tree outlines the phony targets reachable from TARGET through other phony
+targets; `-a` shows the full tree, as above.
 
 ## Limitations
 

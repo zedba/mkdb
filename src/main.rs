@@ -31,33 +31,32 @@ struct Args {
     /// Show everything; same as -vsptf
     #[arg(short = 'a')]
     all: bool,
-    /// Print TARGET's prerequisites as a tree instead of listing
+    /// Print TARGET's prerequisites as a tree instead of listing; -p and -f
+    /// select which nodes to display
     #[arg(long, value_name = "TARGET")]
     tree: Option<String>,
 }
-
-type Deps<'a> = HashMap<&'a str, Vec<&'a str>>;
 
 /// Strips the CURDIR prefix so paths under it read as relative.
 fn rel<'a>(s: &'a str, curdir: &str) -> &'a str {
     s.strip_prefix(curdir).unwrap_or(s)
 }
 
-/// Prints the prerequisites of `node`, one level deeper than `prefix`. A target
+/// Prints `prereqs(node)` recursively, one level deeper than `prefix`. A target
 /// whose prerequisites were already printed is marked (*) and not expanded
 /// again, which also stops cycles.
 fn print_tree<'a>(
     out: &mut impl Write,
-    deps: &Deps<'a>,
+    prereqs: &dyn Fn(&str) -> Vec<&'a str>,
     node: &str,
     prefix: &str,
     seen: &mut HashSet<&'a str>,
     curdir: &str,
 ) -> io::Result<()> {
-    let kids = deps.get(node).map_or(&[][..], Vec::as_slice);
+    let kids = prereqs(node);
     for (i, &kid) in kids.iter().enumerate() {
         let last = i + 1 == kids.len();
-        let repeat = deps.get(kid).is_some_and(|v| !v.is_empty()) && !seen.insert(kid);
+        let repeat = !prereqs(kid).is_empty() && !seen.insert(kid);
         let (branch, indent) = if last {
             ("└── ", "    ")
         } else {
@@ -66,7 +65,14 @@ fn print_tree<'a>(
         let mark = if repeat { " (*)" } else { "" };
         writeln!(out, "{prefix}{branch}{}{mark}", rel(kid, curdir))?;
         if !repeat {
-            print_tree(out, deps, kid, &format!("{prefix}{indent}"), seen, curdir)?;
+            print_tree(
+                out,
+                prereqs,
+                kid,
+                &format!("{prefix}{indent}"),
+                seen,
+                curdir,
+            )?;
         }
     }
     Ok(())
@@ -142,8 +148,9 @@ fn main() -> io::Result<()> {
     if args.all {
         let a = &mut args;
         (a.variables, a.scoped, a.phony, a.patterns, a.files) = (true, true, true, true, true);
+    } else if !(args.variables || args.scoped || args.phony || args.patterns || args.files) {
+        (args.variables, args.phony) = (true, true);
     }
-    let default = !(args.variables || args.scoped || args.phony || args.patterns || args.files);
     let mut input = Vec::new();
     if io::stdin().is_terminal() {
         // Make's exit status says nothing about whether the database is usable,
@@ -164,7 +171,8 @@ fn main() -> io::Result<()> {
     let input = String::from_utf8_lossy(&input);
 
     let mut rows: Vec<(&str, String, String)> = Vec::new();
-    let mut deps = Deps::new(); // prerequisites of each target, in order
+    let mut deps: HashMap<&str, Vec<&str>> = HashMap::new(); // prerequisites, in order
+    let mut phonies = HashSet::new();
     let mut section = None; // current section kind, or None outside them
     let mut origin_loc: Option<String> = None; // origin comment on the previous line
     let mut scope = ""; // pattern of the current pattern-specific block
@@ -196,6 +204,7 @@ fn main() -> io::Result<()> {
             skip = true;
         } else if line == "#  Phony target (prerequisite of .PHONY)." {
             phony = true;
+            phonies.extend(target);
         } else if line.is_empty() {
             if let Some(t) = target.take().filter(|_| !skip) {
                 rows.push((kind, t.to_string(), "-".to_string()));
@@ -247,9 +256,20 @@ fn main() -> io::Result<()> {
             eprintln!("mkdb: no such target: {t}");
             exit(1)
         };
+        let shown = |n: &str| {
+            if phonies.contains(n) {
+                args.phony
+            } else {
+                args.files
+            }
+        };
+        let prereqs = |n: &str| {
+            let all = deps.get(n).into_iter().flatten().copied();
+            all.filter(|&k| shown(k)).collect::<Vec<_>>()
+        };
         let mut seen = HashSet::from([root]);
         let _ = writeln!(out, "{}", rel(root, &curdir))
-            .and_then(|_| print_tree(&mut out, &deps, root, "", &mut seen, &curdir))
+            .and_then(|_| print_tree(&mut out, &prereqs, root, "", &mut seen, &curdir))
             .and_then(|_| out.flush());
         return Ok(());
     }
@@ -258,9 +278,9 @@ fn main() -> io::Result<()> {
     let mut rows: Vec<_> = rows
         .into_iter()
         .filter(|(k, _, _)| match *k {
-            "variable" => args.variables || default,
+            "variable" => args.variables,
             "scoped" => args.scoped,
-            "phony" => args.phony || default,
+            "phony" => args.phony,
             "pattern" => args.patterns,
             _ => args.files,
         })
