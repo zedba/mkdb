@@ -57,13 +57,14 @@ fn location(s: &str) -> Option<String> {
     Some(format!("{file}:{n}"))
 }
 
-/// Parses `# ORIGIN` or `# ORIGIN (from 'FILE', line N)`.
+/// Parses `# ORIGIN [private]`, optionally followed by `(from 'FILE', line N)`.
 fn origin(line: &str) -> Option<String> {
     let rest = line.strip_prefix("# ")?;
     let (name, from) = match rest.split_once(" (from ") {
         Some((name, from)) => (name, Some(from)),
         None => (rest, None),
     };
+    let name = name.strip_suffix(" private").unwrap_or(name);
     if !ORIGINS.contains(&name) {
         return None;
     }
