@@ -9,13 +9,16 @@ use std::process::{Command, Stdio, exit};
 /// List targets, variables, and where they are defined, from a GNU make database.
 ///
 /// Reads the output of `make -pRrq` from stdin. If stdin is a terminal, runs
-/// `${MAKE:-make} -pRrq` in the current directory instead. With none of -v, -p,
-/// -t, or -f, shows variables and phony targets.
+/// `${MAKE:-make} -pRrq` in the current directory instead. With none of -v, -s,
+/// -p, -t, or -f, shows global variables and phony targets.
 #[derive(Parser)]
 struct Args {
-    /// Show variables
+    /// Show global variables
     #[arg(short = 'v')]
     variables: bool,
+    /// Show target- and pattern-specific variables
+    #[arg(short = 's')]
+    scoped: bool,
     /// Show phony targets
     #[arg(short = 'p')]
     phony: bool,
@@ -25,7 +28,7 @@ struct Args {
     /// Show file targets
     #[arg(short = 'f')]
     files: bool,
-    /// Show everything; same as -vptf
+    /// Show everything; same as -vsptf
     #[arg(short = 'a')]
     all: bool,
     /// Print TARGET's prerequisites as a tree instead of listing
@@ -137,9 +140,10 @@ fn varname(text: &str) -> &str {
 fn main() -> io::Result<()> {
     let mut args = Args::parse();
     if args.all {
-        (args.variables, args.phony, args.patterns, args.files) = (true, true, true, true);
+        let a = &mut args;
+        (a.variables, a.scoped, a.phony, a.patterns, a.files) = (true, true, true, true, true);
     }
-    let default = !(args.variables || args.phony || args.patterns || args.files);
+    let default = !(args.variables || args.scoped || args.phony || args.patterns || args.files);
     let mut input = Vec::new();
     if io::stdin().is_terminal() {
         // Make's exit status says nothing about whether the database is usable,
@@ -207,7 +211,7 @@ fn main() -> io::Result<()> {
         } else if sec == "pattern-var" {
             match (prev, line.strip_prefix("# ")) {
                 (Some(loc), Some(def)) => {
-                    rows.push(("variable", format!("{scope}:{}", varname(def)), loc))
+                    rows.push(("scoped", format!("{scope}:{}", varname(def)), loc))
                 }
                 _ => {
                     if let Some(s) = line.strip_suffix(" :") {
@@ -218,7 +222,7 @@ fn main() -> io::Result<()> {
         } else if !line.starts_with('#') {
             let (name, rest) = line.split_once(':').unwrap_or((line, ""));
             match prev {
-                Some(loc) => rows.push(("variable", format!("{name}:{}", varname(rest)), loc)),
+                Some(loc) => rows.push(("scoped", format!("{name}:{}", varname(rest)), loc)),
                 None => {
                     target = Some(name);
                     // Double-colon rules add entries; implicit search can repeat names.
@@ -255,6 +259,7 @@ fn main() -> io::Result<()> {
         .into_iter()
         .filter(|(k, _, _)| match *k {
             "variable" => args.variables || default,
+            "scoped" => args.scoped,
             "phony" => args.phony || default,
             "pattern" => args.patterns,
             _ => args.files,

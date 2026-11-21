@@ -13,9 +13,9 @@ cargo build --release   # binary at target/release/mkdb
 ## Usage
 
 ```sh
-mkdb [-vptfa]
-make -pRrq [MAKE-ARGS] 2>/dev/null | mkdb [-vptfa]
-mkdb [-vptfa] < DUMP
+mkdb [-vsptfa]
+make -pRrq [MAKE-ARGS] 2>/dev/null | mkdb [-vsptfa]
+mkdb [-vsptfa] < DUMP
 mkdb --tree=TARGET [< DUMP]
 ```
 
@@ -26,8 +26,8 @@ stdin. Pipe one in to pass make arguments such as `-C DIR`, `-f FILE`, or
 reads the makefiles, which has side effects (see [Limitations](#limitations)).
 
 Flags select which kinds of rows to show (see [Output](#output)); `-a` shows
-all of them. With none of `-v`, `-p`, `-t`, or `-f`, `mkdb` shows variables and
-phony targets, as if given `-vp`. `--tree` prints a dependency tree instead
+all of them. With none of `-v`, `-s`, `-p`, `-t`, or `-f`, `mkdb` shows global
+variables and phony targets, as if given `-vp`. `--tree` prints a dependency tree instead
 (see [Dependency tree](#dependency-tree)). `-h` prints a summary; `--help`
 prints more detail.
 
@@ -56,16 +56,17 @@ $ make -pRrq 2>/dev/null | mkdb -a | grep -v '<' | column -t
 pattern   %.o            Makefile:8
 phony     all            -
 phony     clean          Makefile:10
+scoped    prog:CFLAGS    Makefile:4
 target    .PHONY         -
 target    prog           Makefile:6
 variable  CC             Makefile:1
 variable  MAKEFILE_LIST  Makefile:1
-variable  prog:CFLAGS    Makefile:4
 ```
 
 | Kind       | Flag | Meaning                                              |
 |------------|------|------------------------------------------------------|
-| `variable` | `-v` | Variable; `SCOPE:VAR` if target- or pattern-specific |
+| `variable` | `-v` | Global variable                                      |
+| `scoped`   | `-s` | Target- or pattern-specific variable, as `SCOPE:VAR` |
 | `phony`    | `-p` | Target listed as a prerequisite of `.PHONY`          |
 | `pattern`  | `-t` | Pattern rule, e.g. `%.o: %.c`                        |
 | `target`   | `-f` | Any other target (a file target)                     |
@@ -130,5 +131,5 @@ already shown is marked `(*)` and not expanded again; this also cuts cycles.
   without a recipe appears, so such targets show `-`.
 - If make stops on a makefile parse error (`*** ... Stop.` on stderr), the
   database it prints has no phony markers, so the default output shows only
-  variables.
+  global variables.
 - Tested with GNU Make 4.3. The database format is not a stable interface.
